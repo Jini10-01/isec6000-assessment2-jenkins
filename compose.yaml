@@ -1,0 +1,122 @@
+services:
+  # Jenkins controller provides the web interface, stores job configuration,
+  # and coordinates CI/CD pipeline execution.
+  jenkins:
+
+    # Build a custom Jenkins image from controller/Dockerfile.
+    # The custom image includes Docker CLI and required Jenkins plugins.
+    build:
+      context: ./controller
+
+    # Explicitly run Jenkins as the non-root user provided by the base image.
+    user: "jenkins"
+
+    # Use a lightweight init process to handle child processes and signals.
+    init: true
+
+    # Restart Jenkins after unexpected failures or Docker daemon restarts,
+    # unless the container was intentionally stopped.
+    restart: unless-stopped
+
+    # Start Jenkins only after the DinD Docker daemon passes its health check.
+    depends_on:
+      docker:
+        condition: service_healthy
+
+    # Bind the Jenkins web interface only to the VM loopback address.
+    # Jenkins will be accessed securely through an SSH tunnel instead of
+    # exposing port 8080 directly to the public network.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    environment:
+      # Send Docker CLI commands to the separate DinD service over TLS.
+      DOCKER_HOST: tcp://docker:2376
+
+      # Specify the location of the TLS client certificates.
+      DOCKER_CERT_PATH: /certs/client
+
+      # Require verification of the DinD server's TLS certificate.
+      DOCKER_TLS_VERIFY: "1"
+
+    volumes:
+      # Persist Jenkins users, jobs, plugins, logs and archived artifacts.
+      - jenkins_home:/var/jenkins_home
+
+      # Mount the TLS client certificates as read-only because Jenkins
+      # only needs to read them when connecting to the DinD daemon.
+      - docker_certs:/certs/client:ro
+
+    # Prevent processes inside Jenkins from acquiring additional privileges.
+    # This supplements, but does not replace, Jenkins user authorization.
+    security_opt:
+      - no-new-privileges:true
+
+    # Connect Jenkins to the private network shared with the DinD service.
+    networks:
+      - jenkins_network
+
+    # Confirm that the Jenkins web service is responding inside the container.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/login > /dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  # Docker-in-Docker provides the Docker daemon used by Jenkins pipelines
+  # to create container agents and build application images.
+  docker:
+    image: docker:dind
+
+    # DinD requires privileged mode to operate its nested Docker daemon.
+    # This elevated permission is limited to DinD and is not given to Jenkins.
+    privileged: true
+
+    # Restart DinD following unexpected failures unless intentionally stopped.
+    restart: unless-stopped
+
+    # Use overlay2 to manage Docker image and container filesystem layers.
+    command: --storage-driver=overlay2
+
+    environment:
+      # Generate TLS server and client certificates under /certs.
+      # TLS protects communication between Jenkins and the Docker daemon.
+      DOCKER_TLS_CERTDIR: /certs
+
+    volumes:
+      # Store TLS client certificates and share them with Jenkins.
+      - docker_certs:/certs/client
+
+      # Persist Docker images, build layers and build cache.
+      - docker_data:/var/lib/docker
+
+    # Connect DinD to the same private network as Jenkins.
+    # Port 2376 is not published to the Ubuntu host or public network.
+    networks:
+      - jenkins_network
+
+    # Verify that the nested Docker daemon is ready to accept commands.
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+# Named volumes preserve important data independently of container lifecycles.
+volumes:
+  # Stores Jenkins configuration, jobs, logs, plugins and artifacts.
+  jenkins_home:
+
+  # Stores TLS client certificates shared between DinD and Jenkins.
+  docker_certs:
+
+  # Stores images, layers and build cache created by the DinD daemon.
+  docker_data:
+
+# A dedicated bridge network isolates Jenkins-to-DinD communication
+# from unrelated containers running on the same Ubuntu server.
+networks:
+  jenkins_network:
+    driver: bridge
