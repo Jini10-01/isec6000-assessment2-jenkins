@@ -1,11 +1,16 @@
 # ISEC6000 Assessment 2 - Jenkins Infrastructure
 
-This repository contains the containerized Jenkins infrastructure developed for ISEC6000 Secure DevOps Assessment 2.
+This repository contains the Jenkins and Docker Compose infrastructure configuration for ISEC6000 Secure DevOps Assessment 2.
 
+It is separate from the application source code repository. The application repository is used for the Node.js web application, while this repository is used to manage the CI/CD infrastructure required to run Jenkins and Docker-in-Docker.
+
+Related application repository:
+
+- https://github.com/Jini10-01/isec6000-assessment2-app
 
 ## Overview
 
-Jenkins is deployed using Docker Compose with a separate Docker-in-Docker (DinD) service. This architecture allows Jenkins pipelines to use Docker without installing the Docker daemon directly inside the Jenkins controller container.
+Jenkins is deployed using Docker Compose with a separate Docker-in-Docker (DinD) service. This architecture allows Jenkins pipelines to run Docker commands, build Docker images, and support container-based CI/CD workflows without installing the Docker daemon directly inside the Jenkins controller container.
 
 The configuration provides persistent storage, encrypted Docker communication, restricted network access, health checks, and least-privilege user permissions.
 
