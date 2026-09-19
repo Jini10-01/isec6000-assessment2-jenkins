@@ -91,6 +91,9 @@ services:
       # Persist Docker images, build layers and build cache.
       - docker_data:/var/lib/docker
 
+      # Shares Jenkins workspaces with DinD-created pipeline agent containers.
+      - jenkins_home:/var/jenkins_home
+
     # Connect DinD to the same private network as Jenkins.
     # Port 2376 is not published to the Ubuntu host or public network.
     networks:
